@@ -46,7 +46,21 @@ APP_INTENT_DEFINITIONS = [
         "regex_pattern": r"^(?:jarvis\s)?(?:.*\b(weather|forecast)\b.*)",
         "entity_keys": [],
         "keywords": ["how is the weather", "weather forecast today", "is it raining", "weather conditions"]
-    }
+    },
+    # NEW playMedia definitions START
+    {
+        "intent_name": "playMedia",
+        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?(?:play|stream)\s+(.+?)\s+on\s+([\w\s]+)",
+        "entity_keys": ["mediaTitle", "mediaService"],
+        "keywords": ["play on", "stream on", "listen to on"] # Keywords help confirm the structure
+    },
+    {
+        "intent_name": "playMedia", # Same intent, different pattern
+        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?(?:play|stream)\s+(.+)",
+        "entity_keys": ["mediaTitle"], # No mediaService captured here
+        "keywords": ["play", "stream", "listen to"]
+    },
+    # NEW playMedia definitions END
 ]
 
 tts_engine = None
