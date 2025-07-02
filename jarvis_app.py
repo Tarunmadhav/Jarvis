@@ -4,11 +4,7 @@ import pyttsx3
 try:
     from jarvis_nlp.nlp_processor import NLPProcessor
 except ImportError:
-    # Fallback for running script directly from root for now
-    # This assumes that the nlp_processor.py file is in a directory named "jarvis_nlp"
-    # and the script is run from the parent directory of "jarvis_nlp".
-    # A more robust solution would involve setting PYTHONPATH or installing as a package.
-    sys.path.append('jarvis_nlp') # Temporarily add to path
+    sys.path.append('jarvis_nlp')
     try:
         from nlp_processor import NLPProcessor
     except ImportError as e:
@@ -16,11 +12,10 @@ except ImportError:
         sys.exit(1)
 
 try:
-    # Import the registry instead of individual functions
     from jarvis_skills.skills import SKILL_REGISTRY
 except ImportError as e:
     print(f"Warning: Could not import SKILL_REGISTRY from jarvis_skills.skills ({e}). Skills will not work.")
-    SKILL_REGISTRY = {} # Empty registry as a fallback
+    SKILL_REGISTRY = {}
 
 APP_INTENT_DEFINITIONS = [
     {
@@ -47,20 +42,31 @@ APP_INTENT_DEFINITIONS = [
         "entity_keys": [],
         "keywords": ["how is the weather", "weather forecast today", "is it raining", "weather conditions"]
     },
-    # NEW playMedia definitions START
     {
         "intent_name": "playMedia",
         "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?(?:play|stream)\s+(.+?)\s+on\s+([\w\s]+)",
         "entity_keys": ["mediaTitle", "mediaService"],
-        "keywords": ["play on", "stream on", "listen to on"] # Keywords help confirm the structure
+        "keywords": ["play on", "stream on", "listen to on"]
     },
     {
-        "intent_name": "playMedia", # Same intent, different pattern
+        "intent_name": "playMedia",
         "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?(?:play|stream)\s+(.+)",
-        "entity_keys": ["mediaTitle"], # No mediaService captured here
+        "entity_keys": ["mediaTitle"],
         "keywords": ["play", "stream", "listen to"]
     },
-    # NEW playMedia definitions END
+    {
+        "intent_name": "queryFile",
+        "regex_pattern": r"^(?:jarvis\s)?(?:what does|does|tell me what)\s+(?:the file|file)\s+([\w\s.\-_/]+?)\s+(?:say about|is about|about|regarding|concerning)\s+(.+)",
+        "entity_keys": ["filePath", "queryText"],
+        "keywords": ["what does file say", "file is about", "file about", "file regarding", "file say about"]
+    },
+    {
+        "intent_name": "queryFile",
+        # Verb group (analyze|...) made non-capturing: (?:analyze|...)
+        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?.*?\b(?:analyze|summarise|summarize|tell me about|explain)\b\s+(?:the file|file)\s+([\w\s.\-_/]+)",
+        "entity_keys": ["filePath"],
+        "keywords": ["analyze", "summarise", "summarize", "tell me about", "explain"]
+    },
 ]
 
 tts_engine = None
@@ -86,7 +92,7 @@ def main():
     try:
         nlp_processor = NLPProcessor(APP_INTENT_DEFINITIONS, keyword_threshold=75)
         speak("Natural Language Processor initialized. Ready for commands.")
-    except Exception as e: # Broader exception for NLP init
+    except Exception as e:
         error_msg = f"Critical Error initializing NLPProcessor: {e}. Jarvis cannot operate."
         print(error_msg)
         if tts_engine: speak(error_msg)
@@ -131,19 +137,17 @@ def main():
                 try:
                     response_message = skill_function(params)
                 except Exception as e:
-                    error_msg = f"Error executing skill '{intent}': {e}" # More specific error
-                    print(f"Jarvis: {error_msg}") # Print the error
-                    if tts_engine: speak(error_msg) # Speak the error
-                    response_message = "I had trouble performing that action." # Generic user-facing message
+                    error_msg = f"Error executing skill '{intent}': {e}"
+                    print(f"Jarvis: {error_msg}")
+                    if tts_engine: speak(error_msg)
+                    response_message = "I had trouble performing that action."
             else:
-                # Intent understood by NLP but no specific skill in registry
                 response_message = f"I understood your intent is '{intent}' with parameters {params}, but I don't have a specific skill for that yet."
         else:
             response_message = "Sorry, I didn't understand that."
 
-        # Ensure response_message is never None here to avoid issues with print/speak if logic above changes
         if response_message is None:
-            response_message = "I encountered an unexpected issue." # Should not happen with current logic
+            response_message = "I encountered an unexpected issue."
 
         print(f"Jarvis: {response_message}")
         if tts_engine: speak(response_message)

@@ -33,7 +33,6 @@ TEST_INTENT_DEFINITIONS = [
         "entity_keys": [],
         "keywords": ["how is the weather", "weather forecast today", "is it raining outside", "temperature check", "weather conditions"]
     },
-    # NEW playMedia definitions (mirrored from jarvis_app.py)
     {
         "intent_name": "playMedia",
         "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?(?:play|stream)\s+(.+?)\s+on\s+([\w\s]+)",
@@ -46,21 +45,32 @@ TEST_INTENT_DEFINITIONS = [
         "entity_keys": ["mediaTitle"],
         "keywords": ["play", "stream", "listen to"]
     },
+    {
+        "intent_name": "queryFile",
+        "regex_pattern": r"^(?:jarvis\s)?(?:what does|does|tell me what)\s+(?:the file|file)\s+([\w\s.\-_/]+?)\s+(?:say about|is about|about|regarding|concerning)\s+(.+)",
+        "entity_keys": ["filePath", "queryText"],
+        "keywords": ["what does file say", "file is about", "file about", "file regarding", "file say about"]
+    },
+    {
+        "intent_name": "queryFile",
+        # Verb group (analyze|...) made non-capturing: (?:analyze|...)
+        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?.*?\b(?:analyze|summarise|summarize|tell me about|explain)\b\s+(?:the file|file)\s+([\w\s.\-_/]+)",
+        "entity_keys": ["filePath"],
+        "keywords": ["analyze", "summarise", "summarize", "tell me about", "explain"]
+    },
 ]
 
 class TestNLPProcessor(unittest.TestCase):
 
     def setUp(self):
-        """Set up an NLPProcessor instance for use in tests with a default threshold."""
         self.default_threshold = 75
         self.processor = NLPProcessor(TEST_INTENT_DEFINITIONS, keyword_threshold=self.default_threshold)
-        # More lenient processor for specific keyword tests if needed
         self.lenient_processor = NLPProcessor(TEST_INTENT_DEFINITIONS, keyword_threshold=60)
 
 
     def test_preprocess(self):
         self.assertEqual(self.processor.preprocess("  TeSt PhRaSe  "), "test phrase")
-        self.assertEqual(self.processor.preprocess(123), "", "Preprocessing non-string should return empty string")
+        self.assertEqual(self.processor.preprocess(123), "")
 
     def test_open_app_intent(self):
         passing_phrases = {
@@ -72,7 +82,7 @@ class TestNLPProcessor(unittest.TestCase):
             with self.subTest(phrase=phrase, type="passing"):
                 result = self.processor.process(phrase)
                 self.assertIsNotNone(result, f"Phrase '{phrase}' failed.")
-                if result: # Keep linter happy
+                if result:
                     self.assertEqual(result["intent"], "openApp")
                     self.assertEqual(result["params"], expected_params)
 
@@ -117,11 +127,9 @@ class TestNLPProcessor(unittest.TestCase):
                     self.assertEqual(result["intent"], "checkWeather")
                     self.assertEqual(result["params"], expected_params)
 
-        self.assertIsNone(self.processor.process("jarvis weather"),
-                          "Expected 'jarvis weather' to be filtered by keyword score (default threshold 75)")
+        self.assertIsNone(self.processor.process("jarvis weather"))
 
     def test_play_media_intent(self):
-        # Test with service
         phrases_with_service = {
             "jarvis play Hotel California on youtube": {"mediaTitle": "hotel california", "mediaService": "youtube"},
             "please stream my workout mix on spotify": {"mediaTitle": "my workout mix", "mediaService": "spotify"},
@@ -132,10 +140,9 @@ class TestNLPProcessor(unittest.TestCase):
                 result = self.processor.process(phrase)
                 self.assertIsNotNone(result, f"Expected intent for '{phrase}', got None")
                 if result:
-                    self.assertEqual(result["intent"], "playMedia", f"Incorrect intent for '{phrase}'")
-                    self.assertEqual(result["params"], expected_params, f"Incorrect params for '{phrase}'")
+                    self.assertEqual(result["intent"], "playMedia")
+                    self.assertEqual(result["params"], expected_params)
 
-        # Test without service (should use the second playMedia regex)
         phrases_without_service = {
             "jarvis play a good song": {"mediaTitle": "a good song"},
             "stream classical music": {"mediaTitle": "classical music"},
@@ -146,66 +153,72 @@ class TestNLPProcessor(unittest.TestCase):
                 result = self.processor.process(phrase)
                 self.assertIsNotNone(result, f"Expected intent for '{phrase}', got None")
                 if result:
-                    self.assertEqual(result["intent"], "playMedia", f"Incorrect intent for '{phrase}'")
-                    self.assertEqual(result["params"], expected_params, f"Incorrect params for '{phrase}', expected no mediaService")
-                    self.assertNotIn("mediaService", result["params"], f"'mediaService' should not be present for '{phrase}'")
+                    self.assertEqual(result["intent"], "playMedia")
+                    self.assertEqual(result["params"], expected_params)
+                    self.assertNotIn("mediaService", result["params"])
 
-        # Test phrase that should be filtered by keywords
-        # The regex for playMedia with service is: r"^(?:jarvis\s)?(?:please\s)?(?:play|stream)\s+(.+?)\s+on\s+([\w\s]+)"
-        # Keywords: ["play on", "stream on", "listen to on"]
-        # Phrase "jarvis list my songs on spotify"
-        # Regex part (?:play|stream) will not match "list". So this should be None due to regex mismatch.
         phrase_weak_keyword_regex_mismatch = "jarvis list my songs on spotify"
         result_weak_keyword = self.processor.process(phrase_weak_keyword_regex_mismatch)
-        self.assertIsNone(result_weak_keyword, f"Phrase '{phrase_weak_keyword_regex_mismatch}' should not match playMedia regex, but got {result_weak_keyword}")
-
-        # Test a phrase that *matches* playMedia regex but keywords are weak for the *overall phrase*.
-        # Example: "jarvis use the player for my track on my device"
-        # Regex: play (.+?) on ([\w\s]+) -> title="my track", service="my device"
-        # Keywords for "playMedia" with service: ["play on", "stream on", "listen to on"]
-        # fuzz.token_set_ratio("jarvis use the player for my track on my device", "play on") might be low.
-        phrase_matches_regex_weak_keywords = "jarvis use the player for my track on my device"
-        # This test needs a processor with a higher threshold or very specific keywords to demonstrate filtering.
-        # The current keywords like "play on" are quite generic.
-        # Let's refine this test. If the phrase is "play my track on my device", it should pass.
-        # If the phrase is "show my track on my device", it should fail keywords.
+        self.assertIsNone(result_weak_keyword)
 
         passing_phrase_strong_keyword = "play my track on my device"
         result_strong_keyword = self.processor.process(passing_phrase_strong_keyword)
-        self.assertIsNotNone(result_strong_keyword, f"Phrase '{passing_phrase_strong_keyword}' should match.")
+        self.assertIsNotNone(result_strong_keyword)
         if result_strong_keyword:
              self.assertEqual(result_strong_keyword["params"]["mediaTitle"], "my track")
              self.assertEqual(result_strong_keyword["params"]["mediaService"], "my device")
 
-        # This phrase *will* match the regex for playMedia (title: "my track", service: "my device")
-        # but "show" is not a primary keyword for the "play" action.
-        # Keywords for playMedia with service are: ["play on", "stream on", "listen to on"]
-        # token_set_ratio("show my track on my device", "play on") should be < 75
         failing_phrase_weak_keywords = "show my track on my device"
         result_fail_keywords = self.processor.process(failing_phrase_weak_keywords)
-        self.assertIsNone(result_fail_keywords, f"Phrase '{failing_phrase_weak_keywords}' should be filtered by keywords, got {result_fail_keywords}")
+        self.assertIsNone(result_fail_keywords)
 
+    def test_query_file_intent(self):
+        phrases_with_query = {
+            "jarvis what does file report.txt say about sales figures": {"filePath": "report.txt", "queryText": "sales figures"},
+            "Tell me what the file notes/meeting_notes.txt is about project alpha": {"filePath": "notes/meeting_notes.txt", "queryText": "project alpha"},
+            "jarvis what does file data_v2.csv concerning response times": {"filePath": "data_v2.csv", "queryText": "response times"}
+        }
+        for phrase, expected_params in phrases_with_query.items():
+            with self.subTest(msg="Query File with specific question", phrase=phrase):
+                result = self.processor.process(phrase)
+                self.assertIsNotNone(result, f"Expected intent for '{phrase}', got None. Current params: {result.get('params') if result else 'None'}")
+                if result:
+                    self.assertEqual(result["intent"], "queryFile", f"Incorrect intent for '{phrase}'")
+                    self.assertEqual(result["params"], expected_params, f"Incorrect params for '{phrase}'")
+
+        phrases_general_analysis = {
+            "jarvis summarize file overview.md": {"filePath": "overview.md"},
+            "analyze the file data/log_output.txt": {"filePath": "data/log_output.txt"},
+            "PLEASE EXPLAIN THE FILE main_logic.py": {"filePath": "main_logic.py"}
+        }
+        for phrase, expected_params in phrases_general_analysis.items():
+            with self.subTest(msg="Query File for general analysis", phrase=phrase):
+                result = self.processor.process(phrase)
+                self.assertIsNotNone(result, f"Expected intent for '{phrase}', got None.")
+                if result:
+                    self.assertEqual(result["intent"], "queryFile", f"Incorrect intent for '{phrase}'")
+                    self.assertEqual(result["params"], expected_params, f"Incorrect params for '{phrase}'")
+                    self.assertNotIn("queryText", result["params"], f"'queryText' should not be present for '{phrase}'")
+
+        phrase_non_match = "jarvis check this document status.txt"
+        result_non_match = self.processor.process(phrase_non_match)
+        self.assertIsNone(result_non_match)
+
+        phrase_bad_verb = "jarvis show the file report.txt about sales"
+        self.assertIsNone(self.processor.process(phrase_bad_verb))
 
     def test_keyword_filtering_logic(self):
         processor_strict = NLPProcessor(TEST_INTENT_DEFINITIONS, keyword_threshold=90)
-        # "jarvis weather" -> max score 67 for checkWeather keywords
-        self.assertIsNone(processor_strict.process("jarvis weather"),
-                          "'jarvis weather' should fail with threshold 90")
-        result_lenient = self.lenient_processor.process("jarvis weather") # threshold 60
-        self.assertIsNotNone(result_lenient, "'jarvis weather' should pass with threshold 60")
+        self.assertIsNone(processor_strict.process("jarvis weather"))
+        result_lenient = self.lenient_processor.process("jarvis weather")
+        self.assertIsNotNone(result_lenient)
         if result_lenient:
              self.assertEqual(result_lenient["intent"], "checkWeather")
 
     def test_unknown_command_after_keyword_filtering(self):
         phrases = [
-            "tell me a joke",
-            "jarvis how are you",
-            "jarvis open",
-            "search",
-            "what is the temperature today",
-            "book a flight",
-            "",
-            "   "
+            "tell me a joke", "jarvis how are you", "jarvis open", "search",
+            "what is the temperature today", "book a flight", "", "   "
         ]
         for phrase in phrases:
             with self.subTest(phrase=phrase):
@@ -213,7 +226,7 @@ class TestNLPProcessor(unittest.TestCase):
                 self.assertIsNone(result, f"Expected None for '{phrase}', got {result}")
 
         result_search_for = self.processor.process("search for")
-        self.assertIsNotNone(result_search_for, "'search for' should be recognized")
+        self.assertIsNotNone(result_search_for)
         if result_search_for:
             self.assertEqual(result_search_for["intent"], "searchWeb")
             self.assertEqual(result_search_for["params"], {"query": "for"})

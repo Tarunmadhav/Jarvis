@@ -1,3 +1,4 @@
 thefuzz
 python-Levenshtein
 pyttsx3
+openai
