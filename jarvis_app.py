@@ -1,5 +1,6 @@
 import sys
 import pyttsx3
+import json # Added import for json
 
 try:
     from jarvis_nlp.nlp_processor import NLPProcessor
@@ -17,57 +18,30 @@ except ImportError as e:
     print(f"Warning: Could not import SKILL_REGISTRY from jarvis_skills.skills ({e}). Skills will not work.")
     SKILL_REGISTRY = {}
 
-APP_INTENT_DEFINITIONS = [
-    {
-        "intent_name": "openApp",
-        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?(?:open|launch|start)\s+([\w\s.-]+)",
-        "entity_keys": ["appName"],
-        "keywords": ["open app", "launch application", "start this app", "open"]
-    },
-    {
-        "intent_name": "getTime",
-        "regex_pattern": r"^(?:jarvis\s)?(?:.*\b(time|what time|current time)\b.*)",
-        "entity_keys": [],
-        "keywords": ["what time is it", "what is the current time", "tell me the time"]
-    },
-    {
-        "intent_name": "searchWeb",
-        "regex_pattern": r"^(?:jarvis\s)?(?:search for|search|find|look up)\s+(.+)",
-        "entity_keys": ["query"],
-        "keywords": ["search the web for", "find on internet", "look up online", "search", "find"]
-    },
-    {
-        "intent_name": "checkWeather",
-        "regex_pattern": r"^(?:jarvis\s)?(?:.*\b(weather|forecast)\b.*)",
-        "entity_keys": [],
-        "keywords": ["how is the weather", "weather forecast today", "is it raining", "weather conditions"]
-    },
-    {
-        "intent_name": "playMedia",
-        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?(?:play|stream)\s+(.+?)\s+on\s+([\w\s]+)",
-        "entity_keys": ["mediaTitle", "mediaService"],
-        "keywords": ["play on", "stream on", "listen to on"]
-    },
-    {
-        "intent_name": "playMedia",
-        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?(?:play|stream)\s+(.+)",
-        "entity_keys": ["mediaTitle"],
-        "keywords": ["play", "stream", "listen to"]
-    },
-    {
-        "intent_name": "queryFile",
-        "regex_pattern": r"^(?:jarvis\s)?(?:what does|does|tell me what)\s+(?:the file|file)\s+([\w\s.\-_/]+?)\s+(?:say about|is about|about|regarding|concerning)\s+(.+)",
-        "entity_keys": ["filePath", "queryText"],
-        "keywords": ["what does file say", "file is about", "file about", "file regarding", "file say about"]
-    },
-    {
-        "intent_name": "queryFile",
-        # Verb group (analyze|...) made non-capturing: (?:analyze|...)
-        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?.*?\b(?:analyze|summarise|summarize|tell me about|explain)\b\s+(?:the file|file)\s+([\w\s.\-_/]+)",
-        "entity_keys": ["filePath"],
-        "keywords": ["analyze", "summarise", "summarize", "tell me about", "explain"]
-    },
-]
+# Removed hardcoded APP_INTENT_DEFINITIONS
+
+def load_intent_definitions(filepath: str = "intent_definitions.json") -> list:
+    """
+    Loads intent definitions from a JSON file.
+    Handles FileNotFoundError and json.JSONDecodeError.
+    Returns an empty list if loading fails.
+    """
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            intent_definitions = json.load(f)
+        if not isinstance(intent_definitions, list):
+            print(f"Error: Intent definitions file '{filepath}' does not contain a valid JSON list.")
+            return []
+        return intent_definitions
+    except FileNotFoundError:
+        print(f"Error: Intent definitions file '{filepath}' not found.")
+        return []
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON from '{filepath}': {e}")
+        return []
+    except Exception as e: # Catch any other unexpected errors during loading
+        print(f"An unexpected error occurred while loading intent definitions from '{filepath}': {e}")
+        return []
 
 tts_engine = None
 
@@ -89,8 +63,15 @@ def main():
 
     speak("Jarvis initializing.")
 
+    app_intent_definitions = load_intent_definitions()
+    if not app_intent_definitions:
+        error_msg = "Failed to load intent definitions. Jarvis cannot understand commands."
+        print(error_msg)
+        if tts_engine: speak(error_msg)
+        return # Exit if definitions failed to load
+
     try:
-        nlp_processor = NLPProcessor(APP_INTENT_DEFINITIONS, keyword_threshold=75)
+        nlp_processor = NLPProcessor(app_intent_definitions, keyword_threshold=75)
         speak("Natural Language Processor initialized. Ready for commands.")
     except Exception as e:
         error_msg = f"Critical Error initializing NLPProcessor: {e}. Jarvis cannot operate."

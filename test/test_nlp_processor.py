@@ -1,72 +1,40 @@
 import unittest
 import sys
 import os
+import json
 
-# Adjust path to import NLPProcessor from jarvis_nlp directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from jarvis_nlp.nlp_processor import NLPProcessor
 
-# Updated Test Intent Definitions to match APP_INTENT_DEFINITIONS in jarvis_app.py
-TEST_INTENT_DEFINITIONS = [
-    {
-        "intent_name": "openApp",
-        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?(?:open|launch|start)\s+([\w\s.-]+)",
-        "entity_keys": ["appName"],
-        "keywords": ["open app", "launch application", "start this app", "open"]
-    },
-    {
-        "intent_name": "getTime",
-        "regex_pattern": r"^(?:jarvis\s)?(?:.*\b(time|what time|current time)\b.*)",
-        "entity_keys": [],
-        "keywords": ["what time is it", "what is the current time", "tell me the time"]
-    },
-    {
-        "intent_name": "searchWeb",
-        "regex_pattern": r"^(?:jarvis\s)?(?:search for|search|find|look up)\s+(.+)",
-        "entity_keys": ["query"],
-        "keywords": ["search the web for", "find on internet", "look up online", "search", "find"]
-    },
-    {
-        "intent_name": "checkWeather",
-        "regex_pattern": r"^(?:jarvis\s)?(?:.*\b(weather|forecast)\b.*)",
-        "entity_keys": [],
-        "keywords": ["how is the weather", "weather forecast today", "is it raining outside", "temperature check", "weather conditions"]
-    },
-    {
-        "intent_name": "playMedia",
-        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?(?:play|stream)\s+(.+?)\s+on\s+([\w\s]+)",
-        "entity_keys": ["mediaTitle", "mediaService"],
-        "keywords": ["play on", "stream on", "listen to on"]
-    },
-    {
-        "intent_name": "playMedia",
-        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?(?:play|stream)\s+(.+)",
-        "entity_keys": ["mediaTitle"],
-        "keywords": ["play", "stream", "listen to"]
-    },
-    {
-        "intent_name": "queryFile",
-        "regex_pattern": r"^(?:jarvis\s)?(?:what does|does|tell me what)\s+(?:the file|file)\s+([\w\s.\-_/]+?)\s+(?:say about|is about|about|regarding|concerning)\s+(.+)",
-        "entity_keys": ["filePath", "queryText"],
-        "keywords": ["what does file say", "file is about", "file about", "file regarding", "file say about"]
-    },
-    {
-        "intent_name": "queryFile",
-        # Verb group (analyze|...) made non-capturing: (?:analyze|...)
-        "regex_pattern": r"^(?:jarvis\s)?(?:please\s)?.*?\b(?:analyze|summarise|summarize|tell me about|explain)\b\s+(?:the file|file)\s+([\w\s.\-_/]+)",
-        "entity_keys": ["filePath"],
-        "keywords": ["analyze", "summarise", "summarize", "tell me about", "explain"]
-    },
-]
+def load_test_intent_definitions(filepath: str = "intent_definitions.json") -> list:
+    try:
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        definitions_path = os.path.join(base_dir, filepath)
+        with open(definitions_path, 'r', encoding='utf-8') as f:
+            intent_definitions = json.load(f)
+        if not isinstance(intent_definitions, list):
+            raise ValueError(f"Test Error: Intent definitions file '{definitions_path}' does not contain a valid JSON list.")
+        return intent_definitions
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Test Error: Intent definitions file '{definitions_path}' not found.")
+    except json.JSONDecodeError as e:
+        raise json.JSONDecodeError(f"Test Error: Error decoding JSON from '{definitions_path}': {e.msg}", e.doc, e.pos)
+    except Exception as e:
+        raise Exception(f"Test Error: An unexpected error occurred while loading intent definitions from '{definitions_path}': {e}")
 
 class TestNLPProcessor(unittest.TestCase):
 
+    @classmethod
+    def setUpClass(cls):
+        cls.intent_definitions = load_test_intent_definitions()
+        if not cls.intent_definitions:
+            raise unittest.SkipTest("Intent definitions could not be loaded; skipping NLPProcessor tests.")
+
     def setUp(self):
         self.default_threshold = 75
-        self.processor = NLPProcessor(TEST_INTENT_DEFINITIONS, keyword_threshold=self.default_threshold)
-        self.lenient_processor = NLPProcessor(TEST_INTENT_DEFINITIONS, keyword_threshold=60)
-
+        self.processor = NLPProcessor(self.__class__.intent_definitions, keyword_threshold=self.default_threshold)
+        self.lenient_processor = NLPProcessor(self.__class__.intent_definitions, keyword_threshold=60)
 
     def test_preprocess(self):
         self.assertEqual(self.processor.preprocess("  TeSt PhRaSe  "), "test phrase")
@@ -126,7 +94,6 @@ class TestNLPProcessor(unittest.TestCase):
                 if result:
                     self.assertEqual(result["intent"], "checkWeather")
                     self.assertEqual(result["params"], expected_params)
-
         self.assertIsNone(self.processor.process("jarvis weather"))
 
     def test_play_media_intent(self):
@@ -183,8 +150,8 @@ class TestNLPProcessor(unittest.TestCase):
                 result = self.processor.process(phrase)
                 self.assertIsNotNone(result, f"Expected intent for '{phrase}', got None. Current params: {result.get('params') if result else 'None'}")
                 if result:
-                    self.assertEqual(result["intent"], "queryFile", f"Incorrect intent for '{phrase}'")
-                    self.assertEqual(result["params"], expected_params, f"Incorrect params for '{phrase}'")
+                    self.assertEqual(result["intent"], "queryFile")
+                    self.assertEqual(result["params"], expected_params)
 
         phrases_general_analysis = {
             "jarvis summarize file overview.md": {"filePath": "overview.md"},
@@ -196,9 +163,9 @@ class TestNLPProcessor(unittest.TestCase):
                 result = self.processor.process(phrase)
                 self.assertIsNotNone(result, f"Expected intent for '{phrase}', got None.")
                 if result:
-                    self.assertEqual(result["intent"], "queryFile", f"Incorrect intent for '{phrase}'")
-                    self.assertEqual(result["params"], expected_params, f"Incorrect params for '{phrase}'")
-                    self.assertNotIn("queryText", result["params"], f"'queryText' should not be present for '{phrase}'")
+                    self.assertEqual(result["intent"], "queryFile")
+                    self.assertEqual(result["params"], expected_params)
+                    self.assertNotIn("queryText", result["params"])
 
         phrase_non_match = "jarvis check this document status.txt"
         result_non_match = self.processor.process(phrase_non_match)
@@ -208,14 +175,14 @@ class TestNLPProcessor(unittest.TestCase):
         self.assertIsNone(self.processor.process(phrase_bad_verb))
 
     def test_keyword_filtering_logic(self):
-        processor_strict = NLPProcessor(TEST_INTENT_DEFINITIONS, keyword_threshold=90)
+        processor_strict = NLPProcessor(self.__class__.intent_definitions, keyword_threshold=90)
         self.assertIsNone(processor_strict.process("jarvis weather"))
         result_lenient = self.lenient_processor.process("jarvis weather")
         self.assertIsNotNone(result_lenient)
         if result_lenient:
              self.assertEqual(result_lenient["intent"], "checkWeather")
 
-    def test_unknown_command_after_keyword_filtering(self):
+    def test_unknown_command_after_keyword_filtering(self): # Restored method
         phrases = [
             "tell me a joke", "jarvis how are you", "jarvis open", "search",
             "what is the temperature today", "book a flight", "", "   "
@@ -226,7 +193,7 @@ class TestNLPProcessor(unittest.TestCase):
                 self.assertIsNone(result, f"Expected None for '{phrase}', got {result}")
 
         result_search_for = self.processor.process("search for")
-        self.assertIsNotNone(result_search_for)
+        self.assertIsNotNone(result_search_for, "'search for' should be recognized")
         if result_search_for:
             self.assertEqual(result_search_for["intent"], "searchWeb")
             self.assertEqual(result_search_for["params"], {"query": "for"})
@@ -234,14 +201,14 @@ class TestNLPProcessor(unittest.TestCase):
     def test_initialization_errors(self):
         with self.assertRaisesRegex(ValueError, "Intent definitions list cannot be empty"):
             NLPProcessor([])
+        with self.assertRaisesRegex(ValueError, "Keyword threshold must be between 0 and 100"):
+            NLPProcessor(self.__class__.intent_definitions, keyword_threshold=-1)
+        with self.assertRaisesRegex(ValueError, "Keyword threshold must be between 0 and 100"):
+            NLPProcessor(self.__class__.intent_definitions, keyword_threshold=101)
         with self.assertRaisesRegex(ValueError, "missing 'intent_name' or 'regex_pattern'"):
             NLPProcessor([{ "name": "test" }])
         with self.assertRaisesRegex(ValueError, "Invalid regex pattern for intent"):
             NLPProcessor([{ "intent_name": "test_invalid_regex", "regex_pattern": "[" }])
-        with self.assertRaisesRegex(ValueError, "Keyword threshold must be between 0 and 100"):
-            NLPProcessor(TEST_INTENT_DEFINITIONS, keyword_threshold=-1)
-        with self.assertRaisesRegex(ValueError, "Keyword threshold must be between 0 and 100"):
-            NLPProcessor(TEST_INTENT_DEFINITIONS, keyword_threshold=101)
         with self.assertRaisesRegex(ValueError, "Keywords for intent .* must be a list"):
              NLPProcessor([{
                 "intent_name": "test_kw_type",
